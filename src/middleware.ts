@@ -3,7 +3,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { locales, defaultLocale } from '@/i18n/config';
 
 // Routes that require authentication
-const PROTECTED = ['/account', '/verify', '/onboarding'];
+const PROTECTED = ['/account', '/verify', '/list'];
 // Routes that redirect authenticated users away
 const AUTH_ONLY = ['/signin', '/signup', '/reset'];
 

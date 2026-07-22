@@ -14,11 +14,21 @@ const FAILURE_REASONS: Record<string, keyof ReturnType<typeof getDictionary>['ve
   document_mismatch: 'failedReasonMismatch',
 };
 
-export default function VerifyPage({ params }: { params: { locale: string } }) {
+export default function VerifyPage({
+  params,
+  searchParams,
+}: {
+  params: { locale: string };
+  searchParams: { next?: string };
+}) {
   const locale = params.locale as Locale;
   const d = getDictionary(locale);
   const v = d.verify;
   const router = useRouter();
+
+  // Where to send the user after a successful verification — e.g. back into
+  // the listing flow (?next=list) that gated them here. Defaults to /account.
+  const nextPath = `/${locale}/${searchParams?.next?.replace(/^\/+/, '') || 'account'}`;
 
   const [status, setStatus] = useState<VerifyStatus>('unverified');
   const [failureReason, setFailureReason] = useState('');
@@ -88,7 +98,7 @@ export default function VerifyPage({ params }: { params: { locale: string } }) {
         <VerifiedBadge className="mb-4" />
         <p className="mb-8 text-sm text-muted">{v.successBody}</p>
         <button
-          onClick={() => router.push(`/${locale}/account`)}
+          onClick={() => router.push(nextPath)}
           className="w-full rounded-lg bg-gold px-5 py-3 font-medium text-ink transition hover:brightness-110"
         >
           {v.continueCta}

@@ -1,24 +1,23 @@
-import Link from 'next/link';
-import { isLocale } from '@/i18n/config';
+import dynamic from 'next/dynamic';
 import { notFound } from 'next/navigation';
+import { isLocale } from '@/i18n/config';
+import type { Locale } from '@/i18n/config';
 
-// Placeholder — built out in a later session.
-export default function Page({ params }: { params: { locale: string } }) {
-  if (!isLocale(params.locale)) notFound();
-  return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col items-center justify-center px-5 text-center">
+// Same ssr:false pattern as /list: this page's content depends on a
+// client-only first fetch (search/filters against Supabase, plus the
+// current user's favourites), so it's loaded with no server render at all
+// to rule out hydration mismatches on the loading state.
+const BrowseView = dynamic(() => import('./BrowseView'), {
+  ssr: false,
+  loading: () => (
+    <main className="mx-auto flex min-h-screen max-w-5xl flex-col items-center justify-center px-5 text-center">
       <p className="mb-2 text-sm uppercase tracking-wide text-gold">Ten2Ten</p>
-      <h1 className="font-display text-3xl text-paper">Coming soon</h1>
-      <p className="mt-3 text-muted">
-        The <strong className="text-paper">browse</strong> experience is being built. For now, tell us
-        what you're looking for on the home page and we'll match you by hand.
-      </p>
-      <Link
-        href={`/${params.locale}`}
-        className="mt-6 rounded-lg bg-gold px-5 py-3 font-medium text-ink hover:bg-gold/90"
-      >
-        Back to home
-      </Link>
+      <p className="text-sm text-muted">Loading…</p>
     </main>
-  );
+  ),
+});
+
+export default function BrowsePage({ params }: { params: { locale: string } }) {
+  if (!isLocale(params.locale)) notFound();
+  return <BrowseView locale={params.locale as Locale} />;
 }

@@ -111,6 +111,23 @@ npm run typecheck
 
 ---
 
+## Local development
+
+Run `npm run dev` as usual. **After deleting or renaming a route file** (an
+`app/[locale]/**/page.tsx`, `layout.tsx`, etc.) while the dev server is still
+running, Next's `.next` cache can keep serving stale chunk manifests for the
+old route tree — this shows up as `layout.css`/`main-app.js` 404s and pages
+that hang on their first load instead of rendering or erroring. If you hit
+that, stop the server and run:
+
+```
+npm run dev:clean   # rm -rf .next && next dev
+```
+
+instead of a plain `npm run dev`. Do this any time a build step in these
+session specs deletes a route (e.g. removing `onboarding/` in the signup
+merge).
+
 ## Deploy (Vercel)
 
 1. Connect the `txtBilly/ten2ten` GitHub repo to a new Vercel project (auto-detects Next.js).
