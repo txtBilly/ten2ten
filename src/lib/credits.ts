@@ -23,19 +23,15 @@ export async function getBalance(seekerId: string): Promise<number> {
 }
 
 // Called from the Stripe webhook after a successful $100 payment.
+// Idempotency: `credit_ledger.stripe_payment_intent` is unique, so a duplicate
+// webhook delivery hits a 23505 conflict instead of double-crediting. Relying
+// on the DB constraint (vs. select-then-insert) closes the race between two
+// concurrent deliveries of the same event.
 export async function grantPurchaseCredits(params: {
   seekerId: string;
   stripePaymentIntent: string;
 }): Promise<void> {
   const admin = createAdminClient();
-
-  // Idempotency: don't double-credit the same payment intent.
-  const { data: existing } = await admin
-    .from('credit_ledger')
-    .select('id')
-    .eq('stripe_payment_intent', params.stripePaymentIntent)
-    .maybeSingle();
-  if (existing) return;
 
   const { error } = await admin.from('credit_ledger').insert({
     seeker_id: params.seekerId,
@@ -44,7 +40,7 @@ export async function grantPurchaseCredits(params: {
     stripe_payment_intent: params.stripePaymentIntent,
     note: `Purchased ${CREDITS_PER_PURCHASE} contact credits`,
   });
-  if (error) throw error;
+  if (error && error.code !== '23505') throw error;
 }
 
 // Consume one credit to open a chat. Returns the ledger row id so the chat
