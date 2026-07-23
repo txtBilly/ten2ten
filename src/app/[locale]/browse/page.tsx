@@ -2,6 +2,7 @@ import dynamic from 'next/dynamic';
 import { notFound } from 'next/navigation';
 import { isLocale } from '@/i18n/config';
 import type { Locale } from '@/i18n/config';
+import SiteHeader from '@/components/SiteHeader';
 
 // Same ssr:false pattern as /list: this page's content depends on a
 // client-only first fetch (search/filters against Supabase, plus the
@@ -19,5 +20,11 @@ const BrowseView = dynamic(() => import('./BrowseView'), {
 
 export default function BrowsePage({ params }: { params: { locale: string } }) {
   if (!isLocale(params.locale)) notFound();
-  return <BrowseView locale={params.locale as Locale} />;
+  const locale = params.locale as Locale;
+  return (
+    <>
+      <SiteHeader locale={locale} />
+      <BrowseView locale={locale} />
+    </>
+  );
 }
