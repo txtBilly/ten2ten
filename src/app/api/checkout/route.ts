@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
   const admin = createAdminClient();
   const { data: profile, error } = await admin
     .from('profiles')
-    .select('bg_check_completed_at, bg_check_expires_at, preferred_locale')
+    .select('bg_check_completed_at, bg_check_expires_at, preferred_locale, credit_score')
     .eq('id', user.id)
     .single();
   if (error) {
@@ -48,6 +48,37 @@ export async function POST(req: NextRequest) {
     !profile.bg_check_completed_at ||
     !profile.bg_check_expires_at ||
     new Date(profile.bg_check_expires_at) <= new Date();
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+
+  // Load the listing once (when we know which one) for the owner + min-score
+  // guards below.
+  let listingRow: { lister_id: string; min_credit_score: number | null } | null = null;
+  if (listingId) {
+    const { data } = await admin
+      .from('listings')
+      .select('lister_id, min_credit_score')
+      .eq('id', listingId)
+      .maybeSingle();
+    listingRow = data;
+  }
+
+  // A lister can't connect to their own listing — refuse before any charge.
+  if (listingRow && listingRow.lister_id === user.id) {
+    return NextResponse.redirect(`${appUrl}/${locale}/browse/${listingId}?blocked=own_listing`, 303);
+  }
+
+  // Min-credit-score hard block (server-side enforcement). A verified seeker
+  // (!includeBgCheck) below this listing's minimum cannot connect — refuse the
+  // checkout entirely and bounce back to the listing's blocked state. First-
+  // timers (includeBgCheck) aren't gated here; they're checked post-screening
+  // in /api/background/start, since their score isn't known yet.
+  if (!includeBgCheck && listingRow) {
+    const minScore = listingRow.min_credit_score ?? null;
+    if (minScore != null && (profile.credit_score == null || profile.credit_score < minScore)) {
+      return NextResponse.redirect(`${appUrl}/${locale}/browse/${listingId}?blocked=min_score`, 303);
+    }
+  }
 
   try {
     const session = await createContactCheckout({

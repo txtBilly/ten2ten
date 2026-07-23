@@ -59,6 +59,7 @@ export async function POST(req: NextRequest) {
   }
 
   const sessionId = req.nextUrl.searchParams.get('session_id');
+  const listingId = req.nextUrl.searchParams.get('listing_id');
   let authorization: BgCheckAuthorization | null = null;
 
   if (sessionId) {
@@ -148,7 +149,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'profile_update_failed' }, { status: 500 });
     }
     await grantPurchaseCredits({ seekerId: user.id, stripePaymentIntent: paymentIntentId });
-    return NextResponse.json({ status: 'pass', creditScore: result.creditScore });
+
+    // Min-score hard block for a first-time seeker: their score is only known
+    // now, after the check. They keep their verification + 3 credits, but if
+    // they're below the listing they came from, they can't connect to it.
+    // No credit is consumed (opening a chat is a later, separate step).
+    let blockedListing = false;
+    let minScore: number | null = null;
+    if (listingId && result.creditScore != null) {
+      const { data: listingRow } = await admin
+        .from('listings')
+        .select('min_credit_score')
+        .eq('id', listingId)
+        .maybeSingle();
+      minScore = listingRow?.min_credit_score ?? null;
+      blockedListing = minScore != null && result.creditScore < minScore;
+    }
+    return NextResponse.json({
+      status: 'pass',
+      creditScore: result.creditScore,
+      blockedListing,
+      minScore,
+    });
   }
 
   if (result.outcome === 'no_match' || result.outcome === 'inconclusive') {

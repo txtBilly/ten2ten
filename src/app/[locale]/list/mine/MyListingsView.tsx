@@ -166,13 +166,23 @@ export default function MyListingsView({ locale }: { locale: Locale }) {
                 {activeListing.monthly_rent != null ? `$${activeListing.monthly_rent.toLocaleString('en-US')}/mo` : ''}
                 {activeListing.type ? ` · ${listingTypeLabel(activeListing.type, l)}` : ''}
               </p>
-              <button
-                type="button"
-                onClick={() => setChatStub(true)}
-                className="mt-1 self-start text-sm text-gold hover:underline"
-              >
-                {m.chatCta}
-              </button>
+              <div className="mt-1 flex items-center gap-4">
+                <button
+                  type="button"
+                  onClick={() => setChatStub(true)}
+                  className="self-start text-sm text-gold hover:underline"
+                >
+                  {m.chatCta}
+                </button>
+                {activeListing.status === 'active' && (
+                  <Link
+                    href={`/${locale}/list?id=${activeListing.id}`}
+                    className="self-start text-sm text-gold hover:underline"
+                  >
+                    {m.editCta}
+                  </Link>
+                )}
+              </div>
               {chatStub && <p className="text-xs text-muted">{m.chatStub}</p>}
             </div>
           </div>

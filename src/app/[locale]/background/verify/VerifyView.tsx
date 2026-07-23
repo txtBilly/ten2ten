@@ -45,6 +45,7 @@ export default function VerifyView({ locale }: { locale: Locale }) {
   const [phase, setPhase] = useState<Phase>('form');
   const [message, setMessage] = useState('');
   const [creditScore, setCreditScore] = useState<number | null>(null);
+  const [blockedMinScore, setBlockedMinScore] = useState<number | null>(null);
 
   const maxDob = shiftYears(18); // must be born on/before this to be 18+
   const minDob = shiftYears(120);
@@ -70,6 +71,7 @@ export default function VerifyView({ locale }: { locale: Locale }) {
     const url = new URL('/api/background/start', window.location.origin);
     url.searchParams.set('session_id', sessionId);
     if (mockOutcome) url.searchParams.set('mock', mockOutcome);
+    if (listingId) url.searchParams.set('listing_id', listingId);
 
     try {
       const res = await fetch(url.toString(), {
@@ -86,6 +88,7 @@ export default function VerifyView({ locale }: { locale: Locale }) {
       if (data.status === 'pass') {
         setPhase('pass');
         setCreditScore(data.creditScore ?? null);
+        setBlockedMinScore(data.blockedListing ? (data.minScore ?? null) : null);
       } else if (data.status === 'retry') {
         setPhase('retry');
         setMessage(
@@ -116,12 +119,27 @@ export default function VerifyView({ locale }: { locale: Locale }) {
           Background check passed{creditScore != null ? ` — credit score ${creditScore}` : ''}. 3 contact credits
           added to your account.
         </p>
-        <Link
-          href={listingHref}
-          className="w-full max-w-xs rounded-lg bg-gold px-5 py-3 text-center font-medium text-ink transition hover:brightness-110"
-        >
-          {listingId ? 'Back to the listing' : 'Browse listings'}
-        </Link>
+        {blockedMinScore != null ? (
+          <>
+            <p className="mb-6 max-w-sm text-sm text-amber-300">
+              This listing requires a minimum credit score of {blockedMinScore}, so you can’t connect to it. Your
+              credits and verification work on listings you match.
+            </p>
+            <Link
+              href={`/${locale}/browse`}
+              className="w-full max-w-xs rounded-lg bg-gold px-5 py-3 text-center font-medium text-ink transition hover:brightness-110"
+            >
+              Browse listings
+            </Link>
+          </>
+        ) : (
+          <Link
+            href={listingHref}
+            className="w-full max-w-xs rounded-lg bg-gold px-5 py-3 text-center font-medium text-ink transition hover:brightness-110"
+          >
+            {listingId ? 'Back to the listing' : 'Browse listings'}
+          </Link>
+        )}
       </main>
     );
   }

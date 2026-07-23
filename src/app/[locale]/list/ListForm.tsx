@@ -26,8 +26,13 @@ export default function ListForm({ locale }: { locale: Locale }) {
 
   const [phase, setPhase] = useState<'checking' | 'loading' | 'ready' | 'published' | 'error'>('checking');
   const [listingId, setListingId] = useState<string | null>(null);
+  const [listingStatus, setListingStatus] = useState<'draft' | 'active' | 'negotiating'>('draft');
   const [retryKey, setRetryKey] = useState(0);
   const hydrated = useRef(false);
+
+  // Editing a published listing (in place) vs. the normal draft → publish flow.
+  const isEditingActive = listingStatus === 'active';
+  const isLocked = listingStatus === 'negotiating';
 
   // The apartment / location / terms / contact fields
   const [type, setType] = useState<ListingTypeValue | ''>('');
@@ -147,12 +152,15 @@ export default function ListForm({ locale }: { locale: Locale }) {
 
       let draft = null;
       if (requestedId) {
+        // Accept the lister's own draft OR a published listing (active /
+        // negotiating) so this form doubles as the in-place editor. The draft
+        // fallbacks below are skipped whenever a record is loaded here.
         const { data: requested } = await supabase
           .from('listings')
           .select('*')
           .eq('id', requestedId)
           .eq('lister_id', user.id)
-          .eq('status', 'draft')
+          .in('status', ['draft', 'active', 'negotiating'])
           .maybeSingle();
         if (settled) return;
         draft = requested;
@@ -193,6 +201,7 @@ export default function ListForm({ locale }: { locale: Locale }) {
       }
 
       setListingId(draft.id);
+      setListingStatus((draft.status as 'draft' | 'active' | 'negotiating') ?? 'draft');
       setType((draft.type as ListingTypeValue) ?? '');
       setNeighborhood(draft.neighborhood ?? '');
       setCrossStreets(draft.cross_streets ?? '');
@@ -249,9 +258,11 @@ export default function ListForm({ locale }: { locale: Locale }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locale, router, retryKey]);
 
-  // Draft autosave, debounced.
+  // Draft autosave, debounced. Only for drafts — a published (active) listing
+  // is edited explicitly via Save changes so we never write a half-typed field
+  // to a live listing, and a negotiating listing is locked entirely.
   useEffect(() => {
-    if (!hydrated.current || !listingId) return;
+    if (!hydrated.current || !listingId || isEditingActive || isLocked) return;
     setSaveStatus('saving');
     const timeout = setTimeout(async () => {
       const supabase = createClient();
@@ -389,6 +400,74 @@ export default function ListForm({ locale }: { locale: Locale }) {
     setPhase('published');
   }
 
+  // In-place save for an already-published listing. Validates the same required
+  // fields as publish (so a live listing can't be saved into an invalid state),
+  // but keeps status active and skips the 1-active / 3-per-year limits.
+  async function handleSaveActive(e: FormEvent) {
+    e.preventDefault();
+    setError('');
+
+    const missingRequired =
+      !type ||
+      !monthlyRent ||
+      Number(monthlyRent) <= 0 ||
+      !neighborhood.trim() ||
+      !crossStreets.trim() ||
+      !fullAddress.trim() ||
+      !zip.trim() ||
+      !availableFrom ||
+      !contactName.trim() ||
+      !contactPhone.trim() ||
+      !photos.bedroom ||
+      !photos.kitchen ||
+      !photos.bathroom;
+
+    if (missingRequired) {
+      setError(l.errorRequired);
+      return;
+    }
+    if (availableFrom < todayStr()) {
+      setError(l.errorPastDate);
+      return;
+    }
+
+    setPublishing(true);
+    const supabase = createClient();
+    const { error: saveError } = await supabase
+      .from('listings')
+      .update({
+        type,
+        neighborhood: neighborhood.trim(),
+        cross_streets: crossStreets.trim(),
+        full_address: fullAddress.trim(),
+        zip: zip.trim(),
+        monthly_rent: parseInt(monthlyRent, 10),
+        sqft: sqft ? parseInt(sqft, 10) : null,
+        floor: floor.trim() || null,
+        description: description.trim() || null,
+        available_from: availableFrom,
+        pets_ok: petsOk,
+        laundry,
+        elevator,
+        walk_up: walkUp,
+        doorman,
+        outdoor,
+        no_fee: noFee,
+        min_credit_score: minCreditScore ? parseInt(minCreditScore, 10) : null,
+        gratitude_amount: gratitudeAmount ? parseInt(gratitudeAmount, 10) : null,
+        contact_name: contactName.trim(),
+        contact_phone: contactPhone.trim(),
+      })
+      .eq('id', listingId);
+
+    setPublishing(false);
+    if (saveError) {
+      setError(saveError.message || l.errorGeneric);
+      return;
+    }
+    router.push(`/${locale}/list/mine`);
+  }
+
   if (phase === 'checking' || phase === 'loading') {
     return (
       <main className="mx-auto flex min-h-screen max-w-2xl flex-col items-center justify-center px-5 text-center">
@@ -438,6 +517,22 @@ export default function ListForm({ locale }: { locale: Locale }) {
     );
   }
 
+  if (isLocked) {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center px-5 py-16 text-center">
+        <p className="mb-4 text-sm uppercase tracking-wide text-gold">Ten2Ten</p>
+        <h1 className="mb-2 font-display text-2xl text-paper">{l.editTitle}</h1>
+        <p className="mb-8 text-sm text-amber-300">{l.editLockedNegotiating}</p>
+        <Link
+          href={`/${locale}/list/mine`}
+          className="w-full rounded-lg bg-gold px-5 py-3 font-medium text-ink transition hover:brightness-110"
+        >
+          {l.backToMine}
+        </Link>
+      </main>
+    );
+  }
+
   const typeOptions: { value: ListingTypeValue; label: string }[] = LISTING_TYPES.map((value) => ({
     value,
     label: listingTypeLabels(l)[value],
@@ -458,25 +553,25 @@ export default function ListForm({ locale }: { locale: Locale }) {
       <div className="mb-8 flex items-center justify-between">
         <div>
           <p className="mb-1 text-sm uppercase tracking-wide text-gold">Ten2Ten</p>
-          <h1 className="font-display text-3xl text-paper">{l.title}</h1>
+          <h1 className="font-display text-3xl text-paper">{isEditingActive ? l.editTitle : l.title}</h1>
         </div>
         <p className="text-xs text-muted" role="status">
-          {saveStatus === 'saving' ? l.saving : saveStatus === 'saved' ? l.saved : ''}
+          {!isEditingActive && (saveStatus === 'saving' ? l.saving : saveStatus === 'saved' ? l.saved : '')}
         </p>
       </div>
 
-      {activeCount > 0 && (
+      {!isEditingActive && activeCount > 0 && (
         <p role="alert" className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
           {l.blockActiveListing}
         </p>
       )}
-      {activeCount === 0 && yearlyCount >= 3 && (
+      {!isEditingActive && activeCount === 0 && yearlyCount >= 3 && (
         <p role="alert" className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
           {l.blockYearlyLimit}
         </p>
       )}
 
-      <form onSubmit={handlePublish} noValidate className="flex flex-col gap-10">
+      <form onSubmit={isEditingActive ? handleSaveActive : handlePublish} noValidate className="flex flex-col gap-10">
         {/* Photos */}
         <section>
           <h2 className="mb-4 font-display text-xl text-paper">{l.sectionPhotos}</h2>
@@ -832,10 +927,16 @@ export default function ListForm({ locale }: { locale: Locale }) {
 
         <button
           type="submit"
-          disabled={publishing || activeCount > 0 || yearlyCount >= 3}
+          disabled={publishing || (!isEditingActive && (activeCount > 0 || yearlyCount >= 3))}
           className="w-full rounded-lg bg-gold px-5 py-3 font-medium text-ink transition hover:brightness-110 disabled:opacity-50"
         >
-          {publishing ? l.publishing : l.publish}
+          {publishing
+            ? isEditingActive
+              ? l.saving
+              : l.publishing
+            : isEditingActive
+              ? l.saveChanges
+              : l.publish}
         </button>
       </form>
     </main>

@@ -66,6 +66,8 @@ export default function ListingDetailView({ locale, id }: { locale: Locale; id: 
   const [lister, setLister] = useState<Lister | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [favourited, setFavourited] = useState(false);
+  const [seekerCreditScore, setSeekerCreditScore] = useState<number | null>(null);
+  const [seekerVerified, setSeekerVerified] = useState(false);
 
   useEffect(() => {
     let settled = false;
@@ -106,7 +108,7 @@ export default function ListingDetailView({ locale, id }: { locale: Locale; id: 
         return;
       }
 
-      const [photosResult, listerResult, favouriteResult] = await Promise.all([
+      const [photosResult, listerResult, favouriteResult, profileResult] = await Promise.all([
         supabase
           .from('listing_photos')
           .select('storage_path, slot, sort_order')
@@ -120,6 +122,13 @@ export default function ListingDetailView({ locale, id }: { locale: Locale; id: 
         user
           ? supabase.from('favourites').select('listing_id').eq('seeker_id', user.id).eq('listing_id', id).maybeSingle()
           : Promise.resolve({ data: null }),
+        user
+          ? supabase
+              .from('profiles')
+              .select('credit_score, bg_check_completed_at, bg_check_expires_at')
+              .eq('id', user.id)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
       ]);
       if (settled) return;
 
@@ -128,6 +137,14 @@ export default function ListingDetailView({ locale, id }: { locale: Locale; id: 
       setPhotos((photosResult.data ?? []).map((p) => listingPhotoUrl(p.storage_path)));
       setLister(listerResult.data ?? null);
       setFavourited(!!favouriteResult.data);
+      const prof = profileResult.data as
+        | { credit_score: number | null; bg_check_completed_at: string | null; bg_check_expires_at: string | null }
+        | null;
+      setSeekerCreditScore(prof?.credit_score ?? null);
+      setSeekerVerified(
+        !!prof?.bg_check_completed_at &&
+          (!prof.bg_check_expires_at || new Date(prof.bg_check_expires_at) > new Date())
+      );
       setPhase('ready');
     }
 
@@ -215,6 +232,20 @@ export default function ListingDetailView({ locale, id }: { locale: Locale; id: 
       : dd.noRatings;
 
   const languageNames = (lister?.spoken_languages ?? []).map((code) => LANGUAGE_NAMES[code] ?? code).join(', ');
+
+  // Hard block: a verified seeker whose credit score is below this listing's
+  // minimum cannot connect to it. Listing-specific — their credits and
+  // verification stay valid for listings they do match. No credit is consumed
+  // on a blocked attempt (nothing here consumes one; checkout also refuses).
+  const blockedBelowMin =
+    seekerVerified &&
+    listing.min_credit_score != null &&
+    seekerCreditScore != null &&
+    seekerCreditScore < listing.min_credit_score;
+
+  // A lister can't connect to their own listing — show a manage affordance
+  // instead of the Connect button (and the min-score block doesn't apply).
+  const isOwner = !!userId && listing.lister_id === userId;
 
   return (
     <main className="mx-auto max-w-3xl px-5 py-16">
@@ -327,18 +358,45 @@ export default function ListingDetailView({ locale, id }: { locale: Locale; id: 
         </div>
       )}
 
-      <form action="/api/checkout" method="POST" onSubmit={handleConnectSubmit}>
-        <input type="hidden" name="locale" value={locale} />
-        {/* Carry the listing through the Stripe round-trip so the post-verify
-            screen can send the seeker back to it (and, later, open the chat). */}
-        <input type="hidden" name="listing_id" value={id} />
-        <button
-          type="submit"
-          className="w-full rounded-lg bg-gold px-5 py-3 font-medium text-ink transition hover:brightness-110"
-        >
-          {dd.connectCta}
-        </button>
-      </form>
+      {isOwner ? (
+        <div className="rounded-2xl border border-white/10 bg-ink/40 p-4">
+          <p className="mb-2 text-sm text-muted">{dd.ownerNote}</p>
+          <Link
+            href={`/${locale}/list/mine`}
+            className="inline-block rounded-lg border border-white/15 px-4 py-2 text-sm text-paper transition hover:bg-white/5"
+          >
+            {dd.ownerCta}
+          </Link>
+        </div>
+      ) : blockedBelowMin ? (
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4">
+          <p className="mb-1 font-medium text-amber-300">{dd.blockTitle}</p>
+          <p className="mb-3 text-sm text-amber-200/80">
+            {dd.blockBody
+              .replace('{min}', String(listing.min_credit_score))
+              .replace('{score}', String(seekerCreditScore))}
+          </p>
+          <Link
+            href={`/${locale}/browse`}
+            className="inline-block rounded-lg border border-amber-400/40 px-4 py-2 text-sm text-amber-200 transition hover:bg-amber-500/10"
+          >
+            {dd.blockCta}
+          </Link>
+        </div>
+      ) : (
+        <form action="/api/checkout" method="POST" onSubmit={handleConnectSubmit}>
+          <input type="hidden" name="locale" value={locale} />
+          {/* Carry the listing through the Stripe round-trip so the post-verify
+              screen can send the seeker back to it (and, later, open the chat). */}
+          <input type="hidden" name="listing_id" value={id} />
+          <button
+            type="submit"
+            className="w-full rounded-lg bg-gold px-5 py-3 font-medium text-ink transition hover:brightness-110"
+          >
+            {dd.connectCta}
+          </button>
+        </form>
+      )}
     </main>
   );
 }
