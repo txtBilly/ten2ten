@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { stripe } from '@/lib/stripe';
 import { grantPurchaseCredits } from '@/lib/credits';
+import { recordAuthorization } from '@/lib/backgroundCheckPayments';
 import type Stripe from 'stripe';
 
 // Stripe needs the raw body to verify the signature — disable body parsing.
@@ -28,6 +29,7 @@ export async function POST(req: NextRequest) {
       const session = event.data.object as Stripe.Checkout.Session;
       const seekerId = session.metadata?.seeker_id;
       const kind = session.metadata?.kind;
+      const includesBgCheck = session.metadata?.includes_bg_check === 'true';
       const paymentIntent =
         typeof session.payment_intent === 'string'
           ? session.payment_intent
@@ -35,14 +37,26 @@ export async function POST(req: NextRequest) {
 
       if (kind === 'contact_bundle' && seekerId && paymentIntent) {
         try {
-          await grantPurchaseCredits({
-            seekerId,
-            stripePaymentIntent: paymentIntent,
-          });
+          if (includesBgCheck) {
+            // Manual-capture flow: the card is authorized, not charged yet.
+            // Credits (and the actual capture) wait for the background-check
+            // vendor result via /api/background/start.
+            await recordAuthorization({
+              seekerId,
+              checkoutSessionId: session.id,
+              paymentIntentId: paymentIntent,
+              amountAuthorizedCents: session.amount_total ?? 0,
+            });
+          } else {
+            await grantPurchaseCredits({
+              seekerId,
+              stripePaymentIntent: paymentIntent,
+            });
+          }
         } catch (e) {
-          console.error('[stripe] failed to grant credits', e);
+          console.error('[stripe] failed to process checkout completion', e);
           // Return 500 so Stripe retries the webhook.
-          return NextResponse.json({ error: 'grant_failed' }, { status: 500 });
+          return NextResponse.json({ error: 'processing_failed' }, { status: 500 });
         }
       }
       break;

@@ -32,6 +32,7 @@ export default function EditProfilePage({ params }: { params: { locale: string }
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [nameLocked, setNameLocked] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
@@ -39,7 +40,7 @@ export default function EditProfilePage({ params }: { params: { locale: string }
       if (!user) { router.push(`/${locale}/signin`); return; }
       supabase
         .from('profiles')
-        .select('full_name, display_first_name, phone, spoken_languages, preferred_locale')
+        .select('full_name, display_first_name, phone, spoken_languages, preferred_locale, bg_check_completed_at, bg_check_expires_at')
         .eq('id', user.id)
         .single()
         .then(({ data }) => {
@@ -49,6 +50,11 @@ export default function EditProfilePage({ params }: { params: { locale: string }
             setPhone(data.phone ?? '');
             setSpokenLanguages(data.spoken_languages ?? ['en']);
             setPreferredLocale((data.preferred_locale as 'en' | 'es') ?? locale);
+            // Legal name locks once identity has *ever* been verified and stays
+            // locked even after the 60-day check expires — it's the person's
+            // real legal name. Matches the lock_verified_full_name DB trigger,
+            // which keys off bg_check_completed_at alone.
+            setNameLocked(!!data.bg_check_completed_at);
           }
           setLoading(false);
         });
@@ -78,7 +84,9 @@ export default function EditProfilePage({ params }: { params: { locale: string }
     const { error: updateError } = await supabase
       .from('profiles')
       .update({
-        full_name: fullName.trim(),
+        // Omit full_name when locked — the field is disabled in the UI and the
+        // DB trigger would reject the change anyway.
+        ...(nameLocked ? {} : { full_name: fullName.trim() }),
         display_first_name: displayFirstName.trim(),
         phone: phone.replace(/\s/g, ''),
         spoken_languages: spokenLanguages,
@@ -120,8 +128,15 @@ export default function EditProfilePage({ params }: { params: { locale: string }
             autoComplete="name"
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
-            className="w-full rounded-lg border border-white/15 bg-ink/40 px-3 py-2.5 text-paper placeholder:text-muted/60 outline-none focus-visible:ring-2 focus-visible:ring-gold"
+            disabled={nameLocked}
+            aria-describedby={nameLocked ? 'full-name-locked' : undefined}
+            className="w-full rounded-lg border border-white/15 bg-ink/40 px-3 py-2.5 text-paper placeholder:text-muted/60 outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:cursor-not-allowed disabled:opacity-60"
           />
+          {nameLocked && (
+            <p id="full-name-locked" className="mt-1.5 text-xs text-muted">
+              Verified — your legal name is locked and can’t be changed.
+            </p>
+          )}
         </div>
 
         <div>

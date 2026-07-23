@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter, notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
@@ -66,7 +66,6 @@ export default function ListingDetailView({ locale, id }: { locale: Locale; id: 
   const [lister, setLister] = useState<Lister | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [favourited, setFavourited] = useState(false);
-  const [connectStub, setConnectStub] = useState(false);
 
   useEffect(() => {
     let settled = false;
@@ -157,6 +156,17 @@ export default function ListingDetailView({ locale, id }: { locale: Locale; id: 
       ? await supabase.from('favourites').insert({ seeker_id: userId, listing_id: id })
       : await supabase.from('favourites').delete().eq('seeker_id', userId).eq('listing_id', id);
     if (toggleError) setFavourited(!next);
+  }
+
+  // Payment path only, for now: this always sends the seeker to buy the
+  // contact-credit bundle. Balance checks, the bg-check gate, the min-score
+  // block, and actually opening the chat are wired in a later step.
+  function handleConnectSubmit(e: FormEvent<HTMLFormElement>) {
+    if (!userId) {
+      e.preventDefault();
+      router.push(`/${locale}/signin`);
+    }
+    // else: let the form POST to /api/checkout and follow the redirect to Stripe.
   }
 
   if (phase === 'loading') {
@@ -317,18 +327,18 @@ export default function ListingDetailView({ locale, id }: { locale: Locale; id: 
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={() => setConnectStub(true)}
-        className="w-full rounded-lg bg-gold px-5 py-3 font-medium text-ink transition hover:brightness-110"
-      >
-        {dd.connectCta}
-      </button>
-      {connectStub && (
-        <p role="status" className="mt-3 text-center text-sm text-muted">
-          {dd.connectStub}
-        </p>
-      )}
+      <form action="/api/checkout" method="POST" onSubmit={handleConnectSubmit}>
+        <input type="hidden" name="locale" value={locale} />
+        {/* Carry the listing through the Stripe round-trip so the post-verify
+            screen can send the seeker back to it (and, later, open the chat). */}
+        <input type="hidden" name="listing_id" value={id} />
+        <button
+          type="submit"
+          className="w-full rounded-lg bg-gold px-5 py-3 font-medium text-ink transition hover:brightness-110"
+        >
+          {dd.connectCta}
+        </button>
+      </form>
     </main>
   );
 }
