@@ -31,6 +31,7 @@ export default function MyListingsView({ locale }: { locale: Locale }) {
   const [activePhotoUrl, setActivePhotoUrl] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<ListingRow[]>([]);
   const [yearlyCount, setYearlyCount] = useState(0);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [chatStub, setChatStub] = useState(false);
 
   useEffect(() => {
@@ -84,6 +85,7 @@ export default function MyListingsView({ locale }: { locale: Locale }) {
       const published = rows.filter((r) => r.published_at && new Date(r.published_at) > oneYearAgo).length;
 
       let photoUrl: string | null = null;
+      let chatId: string | null = null;
       if (active) {
         const { data: photo } = await supabase
           .from('listing_photos')
@@ -94,11 +96,21 @@ export default function MyListingsView({ locale }: { locale: Locale }) {
           .maybeSingle();
         if (settled) return;
         if (photo) photoUrl = listingPhotoUrl(photo.storage_path);
+
+        const { data: chat } = await supabase
+          .from('chats')
+          .select('id')
+          .eq('listing_id', active.id)
+          .eq('status', 'active')
+          .maybeSingle();
+        if (settled) return;
+        chatId = chat?.id ?? null;
       }
 
       if (!finish()) return;
       setActiveListing(active);
       setActivePhotoUrl(photoUrl);
+      setActiveChatId(chatId);
       setDrafts(draftRows);
       setYearlyCount(published);
       setPhase('ready');
@@ -167,13 +179,22 @@ export default function MyListingsView({ locale }: { locale: Locale }) {
                 {activeListing.type ? ` · ${listingTypeLabel(activeListing.type, l)}` : ''}
               </p>
               <div className="mt-1 flex items-center gap-4">
-                <button
-                  type="button"
-                  onClick={() => setChatStub(true)}
-                  className="self-start text-sm text-gold hover:underline"
-                >
-                  {m.chatCta}
-                </button>
+                {activeChatId ? (
+                  <Link
+                    href={`/${locale}/chats/${activeChatId}`}
+                    className="self-start text-sm text-gold hover:underline"
+                  >
+                    {m.chatCta}
+                  </Link>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setChatStub(true)}
+                    className="self-start text-sm text-gold hover:underline"
+                  >
+                    {m.chatCta}
+                  </button>
+                )}
                 {activeListing.status === 'active' && (
                   <Link
                     href={`/${locale}/list?id=${activeListing.id}`}

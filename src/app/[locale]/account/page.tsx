@@ -19,6 +19,12 @@ export default async function AccountPage({ params }: { params: { locale: string
     .eq('id', user.id)
     .single();
 
+  const { data: ledger } = await supabase
+    .from('credit_ledger')
+    .select('amount')
+    .eq('seeker_id', user.id);
+  const creditBalance = (ledger ?? []).reduce((sum, r) => sum + (r.amount ?? 0), 0);
+
   const verificationStatus = profile?.verification_status ?? 'unverified';
   const memberSince = profile?.created_at
     ? new Date(profile.created_at).toLocaleDateString(locale === 'es' ? 'es-US' : 'en-US', {
@@ -75,6 +81,12 @@ export default async function AccountPage({ params }: { params: { locale: string
             </Link>
           )}
         </div>
+      </div>
+
+      {/* Contact credits */}
+      <div className="mb-6 flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+        <span className="text-sm text-muted">{a.creditsLabel}</span>
+        <span className="font-display text-xl text-paper">{creditBalance}</span>
       </div>
 
       {/* Nav links */}

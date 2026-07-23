@@ -71,7 +71,8 @@
     "editProfile": "Editar perfil",
     "notifications": "Preferencias de notificación",
     "deleteAccount": "Eliminar cuenta",
-    "memberSince": "Miembro desde"
+    "memberSince": "Miembro desde",
+    "creditsLabel": "Créditos de contacto"
   },
   "profile": {
     "title": "Editar perfil",
@@ -304,6 +305,10 @@
     "connectStub": "Conectar estará disponible en una futura actualización.",
     "ownerNote": "Este es tu anuncio — no puedes conectarte a él.",
     "ownerCta": "Administrar tus anuncios",
+    "activeChatNote": "Ya tienes una conversación activa. Ciérrala antes de conectarte a otro anuncio.",
+    "goToChat": "Ir al chat",
+    "connecting": "Conectando…",
+    "connectErrorGeneric": "No se pudo abrir la conversación. Inténtalo de nuevo.",
     "blockTitle": "No cumples con el puntaje de crédito mínimo de este anuncio",
     "blockBody": "Este anuncio requiere un puntaje de crédito mínimo de {min}. Tu puntaje verificado es {score}. No se ha cobrado nada y no se usó ningún crédito.",
     "blockCta": "Ver otros anuncios",

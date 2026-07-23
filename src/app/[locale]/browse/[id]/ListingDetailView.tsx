@@ -68,6 +68,10 @@ export default function ListingDetailView({ locale, id }: { locale: Locale; id: 
   const [favourited, setFavourited] = useState(false);
   const [seekerCreditScore, setSeekerCreditScore] = useState<number | null>(null);
   const [seekerVerified, setSeekerVerified] = useState(false);
+  const [seekerCreditBalance, setSeekerCreditBalance] = useState(0);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState(false);
+  const [connectError, setConnectError] = useState('');
 
   useEffect(() => {
     let settled = false;
@@ -108,7 +112,7 @@ export default function ListingDetailView({ locale, id }: { locale: Locale; id: 
         return;
       }
 
-      const [photosResult, listerResult, favouriteResult, profileResult] = await Promise.all([
+      const [photosResult, listerResult, favouriteResult, profileResult, creditResult, chatResult] = await Promise.all([
         supabase
           .from('listing_photos')
           .select('storage_path, slot, sort_order')
@@ -129,6 +133,12 @@ export default function ListingDetailView({ locale, id }: { locale: Locale; id: 
               .eq('id', user.id)
               .maybeSingle()
           : Promise.resolve({ data: null }),
+        user
+          ? supabase.from('credit_ledger').select('amount').eq('seeker_id', user.id)
+          : Promise.resolve({ data: null }),
+        user
+          ? supabase.from('chats').select('id').eq('seeker_id', user.id).eq('status', 'active').maybeSingle()
+          : Promise.resolve({ data: null }),
       ]);
       if (settled) return;
 
@@ -141,10 +151,16 @@ export default function ListingDetailView({ locale, id }: { locale: Locale; id: 
         | { credit_score: number | null; bg_check_completed_at: string | null; bg_check_expires_at: string | null }
         | null;
       setSeekerCreditScore(prof?.credit_score ?? null);
+      // Match the server's open_connect_chat check exactly: a valid, unexpired
+      // background check requires both timestamps present and not past.
       setSeekerVerified(
         !!prof?.bg_check_completed_at &&
-          (!prof.bg_check_expires_at || new Date(prof.bg_check_expires_at) > new Date())
+          !!prof?.bg_check_expires_at &&
+          new Date(prof.bg_check_expires_at) > new Date()
       );
+      const ledgerRows = (creditResult.data as { amount: number }[] | null) ?? [];
+      setSeekerCreditBalance(ledgerRows.reduce((sum, r) => sum + r.amount, 0));
+      setActiveChatId((chatResult.data as { id: string } | null)?.id ?? null);
       setPhase('ready');
     }
 
@@ -175,15 +191,47 @@ export default function ListingDetailView({ locale, id }: { locale: Locale; id: 
     if (toggleError) setFavourited(!next);
   }
 
-  // Payment path only, for now: this always sends the seeker to buy the
-  // contact-credit bundle. Balance checks, the bg-check gate, the min-score
-  // block, and actually opening the chat are wired in a later step.
+  // Checkout path: a seeker who still needs verification or credits is sent to
+  // buy the contact-credit bundle (first purchase includes the $35 check).
   function handleConnectSubmit(e: FormEvent<HTMLFormElement>) {
     if (!userId) {
       e.preventDefault();
       router.push(`/${locale}/signin`);
     }
     // else: let the form POST to /api/checkout and follow the redirect to Stripe.
+  }
+
+  // Direct connect: a verified seeker who has a credit and meets the minimum
+  // opens the chat atomically (server consumes the credit + locks the listing).
+  async function handleConnect() {
+    setConnectError('');
+    setConnecting(true);
+    try {
+      const res = await fetch('/api/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ listingId: id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const reasons: Record<string, string> = {
+          no_credits: "You don't have any contact credits.",
+          active_chat_exists: 'You already have an active conversation.',
+          below_min_score: "Your credit score is below this listing's minimum.",
+          not_verified: 'You need to complete verification first.',
+          listing_unavailable: 'This listing is no longer available.',
+          own_listing: "You can't connect to your own listing.",
+          listing_not_found: 'Listing not found.',
+        };
+        setConnectError(reasons[data?.error] ?? `${dd.connectErrorGeneric} (${data?.error ?? 'error'})`);
+        setConnecting(false);
+        return;
+      }
+      router.push(`/${locale}/chats/${data.chatId}`);
+    } catch {
+      setConnectError(dd.connectErrorGeneric);
+      setConnecting(false);
+    }
   }
 
   if (phase === 'loading') {
@@ -237,15 +285,22 @@ export default function ListingDetailView({ locale, id }: { locale: Locale; id: 
   // minimum cannot connect to it. Listing-specific — their credits and
   // verification stay valid for listings they do match. No credit is consumed
   // on a blocked attempt (nothing here consumes one; checkout also refuses).
+  // Matches the server: a verified seeker with a minimum set is blocked when
+  // their score is missing or below it.
   const blockedBelowMin =
     seekerVerified &&
     listing.min_credit_score != null &&
-    seekerCreditScore != null &&
-    seekerCreditScore < listing.min_credit_score;
+    (seekerCreditScore == null || seekerCreditScore < listing.min_credit_score);
 
   // A lister can't connect to their own listing — show a manage affordance
   // instead of the Connect button (and the min-score block doesn't apply).
   const isOwner = !!userId && listing.lister_id === userId;
+
+  const hasActiveChat = !!activeChatId;
+  // Eligible to open a chat right now (no checkout needed): verified, meets the
+  // minimum, holds a credit, and isn't already in an active conversation.
+  const canDirectConnect =
+    !isOwner && seekerVerified && !blockedBelowMin && seekerCreditBalance >= 1 && !hasActiveChat;
 
   return (
     <main className="mx-auto max-w-3xl px-5 py-16">
@@ -367,6 +422,32 @@ export default function ListingDetailView({ locale, id }: { locale: Locale; id: 
           >
             {dd.ownerCta}
           </Link>
+        </div>
+      ) : hasActiveChat ? (
+        <div className="rounded-2xl border border-white/10 bg-ink/40 p-4">
+          <p className="mb-2 text-sm text-muted">{dd.activeChatNote}</p>
+          <Link
+            href={`/${locale}/chats/${activeChatId}`}
+            className="inline-block rounded-lg border border-white/15 px-4 py-2 text-sm text-paper transition hover:bg-white/5"
+          >
+            {dd.goToChat}
+          </Link>
+        </div>
+      ) : canDirectConnect ? (
+        <div>
+          <button
+            type="button"
+            onClick={handleConnect}
+            disabled={connecting}
+            className="w-full rounded-lg bg-gold px-5 py-3 font-medium text-ink transition hover:brightness-110 disabled:opacity-60"
+          >
+            {connecting ? dd.connecting : dd.connectCta}
+          </button>
+          {connectError && (
+            <p role="alert" className="mt-2 text-sm text-red-400">
+              {connectError}
+            </p>
+          )}
         </div>
       ) : blockedBelowMin ? (
         <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4">

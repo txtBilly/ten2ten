@@ -71,7 +71,8 @@
     "editProfile": "Edit profile",
     "notifications": "Notification preferences",
     "deleteAccount": "Delete account",
-    "memberSince": "Member since"
+    "memberSince": "Member since",
+    "creditsLabel": "Contact credits"
   },
   "profile": {
     "title": "Edit profile",
@@ -304,6 +305,10 @@
     "connectStub": "Connect is coming in a future update.",
     "ownerNote": "This is your listing — you can't connect to it.",
     "ownerCta": "Manage your listings",
+    "activeChatNote": "You already have an active conversation. Close it before connecting to another listing.",
+    "goToChat": "Go to chat",
+    "connecting": "Connecting…",
+    "connectErrorGeneric": "Couldn't open the conversation. Please try again.",
     "blockTitle": "You don't meet this listing's credit minimum",
     "blockBody": "This listing requires a minimum credit score of {min}. Your verified score is {score}. Nothing has been charged and no credit was used.",
     "blockCta": "Browse other listings",

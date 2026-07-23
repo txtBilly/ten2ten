@@ -53,7 +53,7 @@ export function ListingCard({
             <div className="flex h-full w-full items-center justify-center text-xs text-muted/60">—</div>
           )}
           {listing.negotiating && (
-            <span className="absolute left-2 top-2 rounded-full bg-ink/70 px-2 py-0.5 text-xs text-muted backdrop-blur">
+            <span className="absolute left-2 top-2 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-ink shadow-sm">
               {listing.negotiatingLabel}
             </span>
           )}
