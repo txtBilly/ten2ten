@@ -6,3 +6,6 @@ node_modules
 *.log
 .vercel
 *.tsbuildinfo
+.agents/
+.claude/skills/
+skills-lock.json
