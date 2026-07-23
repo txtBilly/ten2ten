@@ -70,6 +70,7 @@ export default function ListingDetailView({ locale, id }: { locale: Locale; id: 
   const [seekerVerified, setSeekerVerified] = useState(false);
   const [seekerCreditBalance, setSeekerCreditBalance] = useState(0);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [listingChatId, setListingChatId] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [connectError, setConnectError] = useState('');
 
@@ -112,7 +113,8 @@ export default function ListingDetailView({ locale, id }: { locale: Locale; id: 
         return;
       }
 
-      const [photosResult, listerResult, favouriteResult, profileResult, creditResult, chatResult] = await Promise.all([
+      const [photosResult, listerResult, favouriteResult, profileResult, creditResult, chatResult, listingChatResult] =
+        await Promise.all([
         supabase
           .from('listing_photos')
           .select('storage_path, slot, sort_order')
@@ -139,6 +141,11 @@ export default function ListingDetailView({ locale, id }: { locale: Locale; id: 
         user
           ? supabase.from('chats').select('id').eq('seeker_id', user.id).eq('status', 'active').maybeSingle()
           : Promise.resolve({ data: null }),
+        // The active chat on THIS listing (readable only by its participants —
+        // so effectively the lister here). Powers the owner's "Go to chat".
+        user
+          ? supabase.from('chats').select('id').eq('listing_id', id).eq('status', 'active').maybeSingle()
+          : Promise.resolve({ data: null }),
       ]);
       if (settled) return;
 
@@ -161,6 +168,7 @@ export default function ListingDetailView({ locale, id }: { locale: Locale; id: 
       const ledgerRows = (creditResult.data as { amount: number }[] | null) ?? [];
       setSeekerCreditBalance(ledgerRows.reduce((sum, r) => sum + r.amount, 0));
       setActiveChatId((chatResult.data as { id: string } | null)?.id ?? null);
+      setListingChatId((listingChatResult.data as { id: string } | null)?.id ?? null);
       setPhase('ready');
     }
 
@@ -416,12 +424,22 @@ export default function ListingDetailView({ locale, id }: { locale: Locale; id: 
       {isOwner ? (
         <div className="rounded-2xl border border-white/10 bg-ink/40 p-4">
           <p className="mb-2 text-sm text-muted">{dd.ownerNote}</p>
-          <Link
-            href={`/${locale}/list/mine`}
-            className="inline-block rounded-lg border border-white/15 px-4 py-2 text-sm text-paper transition hover:bg-white/5"
-          >
-            {dd.ownerCta}
-          </Link>
+          <div className="flex flex-wrap gap-3">
+            {listingChatId && (
+              <Link
+                href={`/${locale}/chats/${listingChatId}`}
+                className="inline-block rounded-lg bg-gold px-4 py-2 text-sm font-medium text-ink transition hover:brightness-110"
+              >
+                {dd.goToChat}
+              </Link>
+            )}
+            <Link
+              href={`/${locale}/list/mine`}
+              className="inline-block rounded-lg border border-white/15 px-4 py-2 text-sm text-paper transition hover:bg-white/5"
+            >
+              {dd.ownerCta}
+            </Link>
+          </div>
         </div>
       ) : hasActiveChat ? (
         <div className="rounded-2xl border border-white/10 bg-ink/40 p-4">
